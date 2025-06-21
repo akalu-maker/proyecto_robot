@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+
+import rospy
+from sensor_msgs.msg import JointState
+import numpy as np
+from copy import copy
+from markers import *
+from robot_functions import *
+
+if __name__ == '__main__':
+
+ # Initialize the node
+ rospy.init_node("testKinematicControlPosition")
+ print('starting motion ... ')
+ # Publisher: publish to the joint_states topic
+ pub = rospy.Publisher('joint_states', JointState, queue_size=10)
+
+ # Files for the logs
+ fxcurrent = open("/home/user/xcurrent.txt", "w")                
+ fxdesired = open("/home/user/xdesired.txt", "w")
+ fq = open("/home/user/q.txt", "w")
+ 
+ bmarker_current  = BallMarker(color['RED'])
+ bmarker_desired = BallMarker(color['GREEN'])
+
+ # Joint names
+ jnames = ['joint_1', 'joint_2', 'joint_3','joint_4', 'joint_5', 'joint_6','joint_7','joint_8']
+ 
+ # Desired position
+ xd = np.array([1, 1, 2])
+ # Initial configuration
+ q0 = np.array([0, 0, 0, 0, 0, 0,0,0])
+
+ # Resulting initial position (end effector with respect to the base link)
+ T = fkine(q0)
+ x0 = T[0:3,3]
+
+ # Red marker shows the achieved position
+ bmarker_current.xyz(x0)
+ # Green marker shows the desired position
+ bmarker_desired.xyz(xd)
+
+ # Instance of the JointState message
+ jstate = JointState()
+ # Values of the message
+ jstate.header.stamp = rospy.Time.now()
+ jstate.name = jnames
+ # Add the head joint value (with value 0) to the joints
+ jstate.position = q0
+
+ # Frequency (in Hz) and control period 
+ freq = 50
+ dt = 1.0/freq
+ rate = rospy.Rate(freq)
+ #valores maximas y minimas de las articulaciones
+ joint2_min=-1.57;  joint2_max=1.57
+ joint3_min=-3.142; joint3_max=0.785
+ joint4_min=-1.57;  joint4_max=1.57
+ joint5_min=0;      joint5_max=0.4
+ joint6_min=-4.04;  joint6_max=0.785 
+
+ joint2_min=-1.57;  joint2_max=1.57
+ joint3_min=-3.142; joint3_max=0.785
+ joint4_min=-1.57;  joint4_max=1.57
+ joint5_min=0;      joint5_max=0.4
+ joint6_min=-4.04;  joint6_max=0.785
+ joint7_min=0;      joint7_max=0.05
+ joint8_min=-0.05;  joint8_max=0
+
+
+ # Initial joint configuration
+ q = copy(q0)
+ # Main loop
+ while not rospy.is_shutdown():
+  # Current time (needed for ROS)
+  jstate.header.stamp = rospy.Time.now()
+  # Kinematic control law for position (complete here)
+  T = fkine(q)
+  x = T[0:3, 3]
+  e = x-xd
+  k = 1
+  x_dot = -k * e
+  J = jacobian(q)
+
+  J_pseudo_inverse = np.linalg.pinv(J)
+  q_dot = np.dot(J_pseudo_inverse,x_dot)
+  q = q + q_dot * dt
+  q[1] = max(min(q[1], joint2_max), joint2_min);
+  q[2] = max(min(q[2], joint3_max), joint3_min);
+  q[3] = max(min(q[3], joint4_max), joint4_min);
+  q[4] = max(min(q[4], joint5_max), joint5_min);
+  q[5] = max(min(q[5], joint6_max), joint6_min);     
+
+
+  # Log values                                                      
+  fxcurrent.write(str(x[0])+' '+str(x[1]) +' '+str(x[2])+'\n')
+  fxdesired.write(str(xd[0])+' '+str(xd[1])+' '+str(xd[2])+'\n')
+  fq.write(str(q[0])+" "+str(q[1])+" "+str(q[2])+" "+str(q[3])+" "+
+           str(q[4])+" "+str(q[5])+"\n")   
+   
+  # Publish the message
+  jstate.position = q
+  pub.publish(jstate)
+  bmarker_desired.xyz(xd)
+  bmarker_current.xyz(x)
+
+  if (np.linalg.norm(e)<0.01):
+    break
+
+  # Wait for the next iteration
+  rate.sleep()
+  print(J)
+  print("----------------------------------------------")
+ print('ending motion ...')
+ fxcurrent.close()
+ fxdesired.close()
+ fq.close()
+ 
+
