@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?> 
-<launch>
-  <param name="robot_description" textfile="$(find ROBOT_URDF)/urdf/ROBOT_URDF.urdf"/>
-  <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
-  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find ROBOT_URDF)/config/robot.rviz" required="true" />
-</launch>
