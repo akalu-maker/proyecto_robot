@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+
+import rospy
+from sensor_msgs.msg import JointState
+import numpy as np
+from markers import *
+from robot_functions import *
+from copy import copy
+
+if __name__ == '__main__':
+    rospy.init_node("testKineControlPose")
+    print('starting motion ... ')
+
+    pub = rospy.Publisher('joint_states', JointState, queue_size=1000)
+
+    bmarker_current  = FrameMarker()
+    bmarker_desired = FrameMarker(0.5)
+    jnames = ['joint_1', 'joint_2', 'joint_3','joint_4', 'joint_5', 'joint_6','joint_7','joint_8']
+    
+    # Desired pose
+    Rd = np.array([[0,0,-1],[0,-1,0],[-1,0,0]])
+    qd = Quaternion(matrix=Rd)
+    # Find an xd that the robot can reach
+    xd = np.array([0,-1.4, 1.6, qd.w, qd.x, qd.y, qd.z])
+    # Initial configuration
+    q0 = np.array([0,0,0,0,0,0,0,0])
+    
+    # Resulting initial pose (end effector with respect to the base link)
+    T = fkine(q0)
+    x0 = TF2xyzquat(T)
+    
+    # Markers for the current and the desired pose
+    bmarker_current.setPose(x0)
+    bmarker_desired.setPose(xd)
+    
+    # Instance of the JointState message
+    jstate = JointState()
+    # Values of the message
+    jstate.header.stamp = rospy.Time.now()
+    jstate.name = jnames
+    # Add the head joint value (with value 0) to the joints
+    jstate.position = q0    
+    # Frequency (in Hz) and control period 
+    freq = 50
+    dt = 1.0/freq
+    rate = rospy.Rate(freq)
+    joint1_min=0
+    joint1_max=6.283
+    joint2_min=-1.57
+    joint2_max=1.57
+    joint3_min=-3.142
+    joint3_max=0.785
+    joint4_min=-1.57
+    joint4_max=1.57
+    joint5_min=0
+    joint5_max=0.4
+    joint6_min=-4.04
+    joint6_max=0.785 
+
+    
+    # Initial joint configuration
+    q = copy(q0)
+    x = copy(x0)
+    quat = x[3:7]
+    # Initialize the derror vector (derivative of the error)
+    derror = np.zeros(7)
+    # Main loop
+    #for i in range(1):
+    while not rospy.is_shutdown():
+        jstate.header.stamp = rospy.Time.now()        
+        err_pose=x-xd        
+        k = 0.5 
+        x_dot = -k * err_pose
+        try:
+            J = jacobian_pose(q)
+            J_pseudo_inverse = np.linalg.pinv(J)
+        except np.linalg.LinAlgError:
+            lambda_damp = 0.01 
+            J_pseudo_inverse = np.dot(np.linalg.inv(np.dot(J.T, J) + lambda_damp**2*np.eye(J.shape[1])), J.T)
+        q_dot = np.dot(J_pseudo_inverse, x_dot)       
+        q = q + q_dot * dt
+        q[1] = max(min(q[1], joint2_max), joint2_min)
+        q[2] = max(min(q[2], joint3_max), joint3_min)
+        q[3] = max(min(q[3], joint4_max), joint4_min)
+        q[4] = max(min(q[4], joint5_max), joint5_min)
+        q[5] = max(min(q[5], joint6_max), joint6_min)   
+        T = fkine(q)
+        x = TF2xyzquat(T)        
+        jstate.position = q
+        pub.publish(jstate)
+        bmarker_desired.setPose(xd)
+        bmarker_current.setPose(x)
+        if (np.linalg.norm(err_pose)<0.01):
+            print("Posicion alcanzada")
+            print(q)
+            break        
+        rate.sleep()
+
